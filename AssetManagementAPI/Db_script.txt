@@ -1,0 +1,56 @@
+﻿USE [master]
+GO
+
+CREATE DATABASE [AssetManagement]
+GO
+
+--------------------------------------------------------------------------------------------------------
+
+USE [AssetManagement]
+GO
+
+/****** Object:  Table [dbo].[Assets]    Script Date: 5/3/2025 10:07:33 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[Assets](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[Name] [nvarchar](100) NOT NULL,
+	[Type] [nvarchar](50) NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+--------------------------------------------------------------------------------------------------------
+
+USE [AssetManagement]
+GO
+
+/****** Object:  Table [dbo].[BalanceEntries]    Script Date: 5/3/2025 10:08:05 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[BalanceEntries](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[BalanceAsOf] [date] NOT NULL,
+	[Amount] [decimal](18, 2) NOT NULL,
+	[AssetId] [int] NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[BalanceEntries]  WITH CHECK ADD FOREIGN KEY([AssetId])
+REFERENCES [dbo].[Assets] ([Id])
+GO
