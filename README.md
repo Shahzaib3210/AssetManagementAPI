@@ -94,10 +94,10 @@ The Asset Management API is a .NET 8-based web API for managing assets, balances
 ## Running the Project  
 1. Clone the repository.  
 2. Configure the database connection string in `appsettings.json` using MS SQL Server's local instance.  
-3. Run database script mentioned mentioned in file `Db_script.txt` in MS SQL Server:
+3. Run the database script on MS SQL Server mentioned in file `Db_script.txt` in MS SQL Server:
 4. Start the API:
 ## Testing the API  
-Run this solution from VS Studio 2022 and it will open up Swagger UI on browser using localhost. Call the endpoints to test them. Other tools like Postman or cURL can also be used to test the endpoints.  
+Run this solution from VS Studio 2022 and it will open up Swagger UI on the browser using localhost. Call the endpoints to test them. Other tools like Postman or cURL can also be used to test the endpoints.  
 
 ## License  
 This project is licensed under the MIT License.
