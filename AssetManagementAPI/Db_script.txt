@@ -9,48 +9,97 @@ GO
 USE [AssetManagement]
 GO
 
-/****** Object:  Table [dbo].[Assets]    Script Date: 5/3/2025 10:07:33 PM ******/
-SET ANSI_NULLS ON
-GO
-
-SET QUOTED_IDENTIFIER ON
-GO
-
+-- Main Assets table
 CREATE TABLE [dbo].[Assets](
-	[Id] [int] IDENTITY(1,1) NOT NULL,
-	[Name] [nvarchar](100) NOT NULL,
-	[Type] [nvarchar](50) NOT NULL,
-PRIMARY KEY CLUSTERED 
-(
-	[Id] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
-) ON [PRIMARY]
+    [Id] [int] IDENTITY(1,1) NOT NULL,
+    [AssetId] [nvarchar](50) NOT NULL,
+    [AssetDescription] [nvarchar](max) NULL,
+    [AssetInfo] [nvarchar](max) NULL,
+    [AssetInfoType] [nvarchar](50) NULL,
+    [AssetName] [nvarchar](100) NULL,
+    [Nickname] [nvarchar](100) NULL,
+    [PrimaryAssetCategory] [nvarchar](50) NULL,
+    [WealthAssetType] [nvarchar](50) NULL,
+    [CognitoId] [nvarchar](50) NULL,
+    [Wid] [nvarchar](50) NULL,
+    [UserInstitutionId] [nvarchar](50) NULL,
+    [InstitutionId] [int] NULL,
+    [InstitutionName] [nvarchar](100) NULL,
+    [IncludeInNetWorth] [bit] NOT NULL DEFAULT 1,
+    [IsActive] [bit] NOT NULL DEFAULT 1,
+    [IsAsset] [bit] NULL,
+    [IsFavorite] [bit] NULL,
+    [CreationDate] [datetime2](7) NOT NULL,
+    [ModificationDate] [datetime2](7) NULL,
+    [LastUpdate] [datetime2](7) NULL,
+    [LastUpdateAttempt] [datetime2](7) NULL,
+    [LogoName] [nvarchar](255) NULL,
+    [Status] [nvarchar](100) NULL,
+    [StatusCode] [nvarchar](50) NULL,
+    [VendorResponseType] [nvarchar](50) NULL,
+    CONSTRAINT [PK_Assets] PRIMARY KEY CLUSTERED ([Id] ASC)
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
---------------------------------------------------------------------------------------------------------
-
-USE [AssetManagement]
-GO
-
-/****** Object:  Table [dbo].[BalanceEntries]    Script Date: 5/3/2025 10:08:05 PM ******/
-SET ANSI_NULLS ON
-GO
-
-SET QUOTED_IDENTIFIER ON
-GO
-
+-- Balance Entries table
 CREATE TABLE [dbo].[BalanceEntries](
-	[Id] [int] IDENTITY(1,1) NOT NULL,
-	[BalanceAsOf] [date] NOT NULL,
-	[Amount] [decimal](18, 2) NOT NULL,
-	[AssetId] [int] NOT NULL,
-PRIMARY KEY CLUSTERED 
-(
-	[Id] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+    [Id] [int] IDENTITY(1,1) NOT NULL,
+    [AssetId] [int] NOT NULL,
+    [BalanceAsOf] [datetime2](7) NOT NULL,
+    [Amount] [decimal](18, 2) NOT NULL,
+    [BalanceCostBasis] [decimal](18, 2) NULL,
+    [BalanceCostFrom] [nvarchar](50) NULL,
+    [BalanceFrom] [nvarchar](50) NULL,
+    [BalancePrice] [decimal](18, 2) NULL,
+    [BalancePriceFrom] [nvarchar](50) NULL,
+    [BalanceQuantityCurrent] [decimal](18, 2) NULL,
+    CONSTRAINT [PK_BalanceEntries] PRIMARY KEY CLUSTERED ([Id] ASC)
 ) ON [PRIMARY]
 GO
 
-ALTER TABLE [dbo].[BalanceEntries]  WITH CHECK ADD FOREIGN KEY([AssetId])
-REFERENCES [dbo].[Assets] ([Id])
+-- Holdings table (for complex asset composition data)
+CREATE TABLE [dbo].[Holdings](
+    [Id] [int] IDENTITY(1,1) NOT NULL,
+    [AssetId] [int] NOT NULL,
+    [MajorClass] [nvarchar](50) NULL,
+    [MinorClass] [nvarchar](50) NULL,
+    [Value] [decimal](18, 2) NULL,
+    CONSTRAINT [PK_Holdings] PRIMARY KEY CLUSTERED ([Id] ASC)
+) ON [PRIMARY]
+GO
+
+CREATE TABLE AssetInfo (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    Nickname NVARCHAR(255),
+    DescriptionEstatePlan NVARCHAR(MAX),
+    EstimateValue DECIMAL(18, 2),
+    PurchaseCost DECIMAL(18, 2),
+    PurchaseDate [datetime2](7) NULL,
+    AsOfDate [datetime2](7) NOT NULL,
+    IsFavorite BIT NOT NULL,
+    StreetAddress NVARCHAR(255),
+    StreetAddress2 NVARCHAR(255),
+    City NVARCHAR(100),
+    State NVARCHAR(100),
+    ZipCode NVARCHAR(20),
+    CountryCode NVARCHAR(10),
+    UseZillow BIT NULL,
+    Neighborhood NVARCHAR(255),
+    Slug NVARCHAR(255),
+    Symbol NVARCHAR(50),
+    CryptocurrencyName NVARCHAR(255),
+    Quantity DECIMAL(18, 8) NULL,
+    ManualAddType INT NULL,
+    ModelYear INT NULL,
+    AssetId INT NOT NULL FOREIGN KEY REFERENCES Assets(Id)
+);
+GO
+
+-- Foreign key constraints only (no indexes)
+ALTER TABLE [dbo].[BalanceEntries] WITH CHECK ADD CONSTRAINT [FK_BalanceEntries_Assets] 
+FOREIGN KEY([AssetId]) REFERENCES [dbo].[Assets] ([Id]) ON DELETE CASCADE
+GO
+
+ALTER TABLE [dbo].[Holdings] WITH CHECK ADD CONSTRAINT [FK_Holdings_Assets] 
+FOREIGN KEY([AssetId]) REFERENCES [dbo].[Assets] ([Id]) ON DELETE CASCADE
 GO

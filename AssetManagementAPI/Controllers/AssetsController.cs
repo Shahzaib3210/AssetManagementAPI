@@ -2,7 +2,11 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
-using System.Globalization;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace AssetManagementAPI.Controllers
 {
@@ -18,113 +22,231 @@ namespace AssetManagementAPI.Controllers
             _context = context;
         }
 
-        // Endpoint to add a list of assets to the database
+        // Endpoint to add multiple assets to the database
         [HttpPost("AddAssets")]
-        public async Task<IActionResult> AddAssets([FromBody] List<Asset> assets)
+        public async Task<IActionResult> AddAssets([FromBody] JsonElement jsonData)
         {
             try
             {
-                // Check if the provided list of assets is not null and contains at least one asset
-                if (assets != null && assets.Count > 0)
+                // Lists to hold parsed data for bulk insertion
+                var assets = new List<Asset>();
+                var assetInfos = new List<AssetInfo>();
+                var holdings = new List<Holding>();
+
+                // Iterate through each asset in the input JSON array
+                foreach (var assetElement in jsonData.EnumerateArray())
                 {
-                    // Loop through each asset and add it to the database context
-                    foreach (var asset in assets)
+                    // Extract and validate the "assetInfo" JSON string
+                    var assetInfoJson = assetElement.GetProperty("assetInfo").GetString();
+                    if (string.IsNullOrEmpty(assetInfoJson))
                     {
-                        _context.Assets.Add(asset);
+                        return BadRequest("AssetInfo JSON is missing or invalid.");
                     }
 
-                    // Save all changes to the database asynchronously
-                    await _context.SaveChangesAsync();
+                    // Deserialize the "assetInfo" JSON into an AssetInfo object
+                    var assetInfo = System.Text.Json.JsonSerializer.Deserialize<AssetInfo>(assetInfoJson, new System.Text.Json.JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+                    if (assetInfo == null)
+                    {
+                        return BadRequest("Failed to deserialize AssetInfo.");
+                    }
 
-                    // Return a 200 OK response if successful
-                    return Ok();
+                    // Extract required fields from the JSON object
+                    var assetId = assetElement.GetProperty("assetId").GetString();
+                    var nickname = assetElement.GetProperty("nickname").GetString();
+                    var assetInfoType = assetElement.GetProperty("assetInfoType").GetString();
+                    var wealthAssetType = assetElement.GetProperty("wealthAssetType").GetString();
+                    var creationDateString = assetElement.GetProperty("creationDate").GetString();
+                    var balanceAsOfString = assetElement.GetProperty("balanceAsOf").GetString();
+                    var balanceFrom = assetElement.GetProperty("balanceFrom").GetString();
+
+                    // Validate required fields
+                    if (string.IsNullOrEmpty(assetId) || string.IsNullOrEmpty(nickname) || string.IsNullOrEmpty(assetInfoType) ||
+                        string.IsNullOrEmpty(wealthAssetType) || string.IsNullOrEmpty(creationDateString) || string.IsNullOrEmpty(balanceAsOfString) ||
+                        string.IsNullOrEmpty(balanceFrom))
+                    {
+                        return BadRequest("One or more required fields are missing or invalid.");
+                    }
+
+                    // Create a new Asset object and populate its properties
+                    var asset = new Asset
+                    {
+                        AssetId = assetId,
+                        Nickname = nickname,
+                        AssetInfo = string.Empty, // Assign an empty string to avoid nullability issues
+                        AssetInfoType = assetInfoType,
+                        WealthAssetType = wealthAssetType,
+                        IncludeInNetWorth = assetElement.GetProperty("includeInNetWorth").GetBoolean(),
+                        IsActive = assetElement.GetProperty("isActive").GetBoolean(),
+                        CreationDate = DateTime.Parse(creationDateString),
+                        ModificationDate = assetElement.TryGetProperty("modificationDate", out var modDate) && !string.IsNullOrEmpty(modDate.GetString())
+                            ? DateTime.Parse(modDate.GetString()!)
+                            : null,
+                        Balances = new List<BalanceEntry>
+                        {
+                            new BalanceEntry
+                            {
+                                BalanceAsOf = DateTime.Parse(balanceAsOfString),
+                                Amount = assetElement.GetProperty("balanceCurrent").GetDecimal(),
+                                BalanceFrom = balanceFrom,
+                                BalanceCostBasis = assetElement.TryGetProperty("balanceCostBasis", out var costBasis) ? costBasis.GetDecimal() : null
+                            }
+                        }
+                    };
+
+                    // Add the asset to the list for bulk insertion
+                    assets.Add(asset);
+
+                    // Link the deserialized AssetInfo to the asset and add it to the list
+                    assetInfo.Asset = asset;
+                    assetInfos.Add(assetInfo);
+
+                    // Process holdings if they exist in the JSON object
+                    if (assetElement.TryGetProperty("holdings", out var holdingsArray) && holdingsArray.ValueKind == JsonValueKind.Object)
+                    {
+                        var holdingsData = System.Text.Json.JsonSerializer.Deserialize<HoldingsData>(holdingsArray.GetRawText());
+                        if (holdingsData != null)
+                        {
+                            foreach (var majorClass in holdingsData.majorAssetClasses)
+                            {
+                                foreach (var assetClass in majorClass.assetClasses)
+                                {
+                                    holdings.Add(new Holding
+                                    {
+                                        MajorClass = majorClass.majorClass ?? string.Empty, // Ensure non-null value
+                                        MinorClass = assetClass.minorAssetClass ?? string.Empty, // Ensure non-null value
+                                        Value = assetClass.value,
+                                        Asset = asset
+                                    });
+                                }
+                            }
+                        }
+                    }
                 }
-                else
-                {
-                    // Return a 400 Bad Request response if no assets were provided
-                    return BadRequest("No assets provided.");
-                }
+
+                // Add all parsed data to the database context
+                _context.Assets.AddRange(assets);
+                _context.AssetInfos.AddRange(assetInfos);
+                _context.Holdings.AddRange(holdings);
+
+                // Save changes to the database
+                await _context.SaveChangesAsync();
+
+                // Return success response with the count of imported assets
+                return Ok($"{assets.Count} assets imported successfully");
+            }
+            catch (DbUpdateException dbEx)
+            {
+                // Handle database update exceptions
+                return StatusCode(500, $"Database error: {dbEx.InnerException?.Message ?? dbEx.Message}");
             }
             catch (Exception ex)
             {
-                // Throw a new exception with additional context if an error occurs
-                throw new Exception("AddAssets - Error saving assets to the database", ex);
+                // Handle general exceptions
+                return StatusCode(500, $"Error importing assets: {ex.Message}");
             }
         }
 
-        // Endpoint to retrieve assets and their most recent balance as of a specific date
+        // Helper classes for deserialization of holdings data
+        public class HoldingsData
+        {
+            public List<MajorAssetClass> majorAssetClasses { get; set; } = new();
+        }
+
+        public class MajorAssetClass
+        {
+            public string majorClass { get; set; }
+            public List<AssetClass> assetClasses { get; set; } = new();
+        }
+
+        public class AssetClass
+        {
+            public string minorAssetClass { get; set; }
+            public decimal value { get; set; }
+        }
+
+        // Endpoint to retrieve assets as of a specific date
         [HttpGet("GetAssetsAsOfDate")]
-        public IActionResult GetAssetsAsOf([FromQuery] DateTime date)
+        public IActionResult GetAssetsAsOfDate([FromQuery] DateTime date)
         {
             try
             {
-                // Query the database for assets that have at least one balance entry on or before the specified date
+                // Query to fetch assets with their latest balances as of the given date
                 var result = _context.Assets
-                    .Where(a => a.Balances.Any(b => b.BalanceAsOf <= date)) // Filter assets with balances up to the given date
+                    .Include(a => a.Balances)
                     .Select(a => new
                     {
-                        a.Id, // Asset ID
-                        a.Name, // Asset name
-                        a.Type, // Asset type
-                        Balance = a.Balances
-                            .Where(b => b.BalanceAsOf <= date) // Filter balances up to the given date
-                            .OrderByDescending(b => b.BalanceAsOf) // Order balances by the most recent date
-                            .Select(b => new
-                            {
-                                b.BalanceAsOf, // Date of the balance
-                                b.Amount // Balance amount
-                            })
-                            .FirstOrDefault() // Select the most recent balance
+                        a.AssetId,
+                        a.Nickname,
+                        a.WealthAssetType,
+                        a.CreationDate,
+                        LatestBalance = a.Balances
+                            .Where(b => b.BalanceAsOf.Date <= date.Date) // Filter balances on or before the date
+                            .OrderByDescending(b => b.BalanceAsOf) // Get the most recent balance
+                            .FirstOrDefault()
                     })
+                    .Where(a => a.LatestBalance != null) // Exclude assets with no valid balances
+                    .OrderByDescending(a => a.LatestBalance.BalanceAsOf) // Sort by the latest balance date
+                    .Take(1) // Take only the top asset with the latest balance
                     .ToList();
 
-                // Return the result as a 200 OK response
+                // Return the result as a JSON response
                 return Ok(result);
             }
             catch (Exception ex)
             {
-                // Throw a new exception with additional context if an error occurs
-                throw new Exception("GetAssetsAsOf - Error getting the assets from database", ex);
+                // Handle general exceptions
+                return StatusCode(500, $"Error retrieving assets: {ex.Message}");
             }
         }
 
-        // Endpoint to retrieve the historical balances of a specific asset
+        // Endpoint to retrieve historical balances for a specific asset
         [HttpGet("GetHistoricalBalances")]
-        public IActionResult GetHistoricalBalances([FromQuery] int assetId)
+        public IActionResult GetHistoricalBalances([FromQuery] string assetId)
         {
             try
             {
-                // Query the database for the asset with the specified ID and its balances
+                // Fetch the asset and its balances from the database
                 var asset = _context.Assets
-                    .Where(a => a.Id == assetId) // Filter by asset ID
-                    .Select(a => new
-                    {
-                        a.Id, // Asset ID
-                        a.Name, // Asset name
-                        a.Type, // Asset type
-                        Balances = a.Balances
-                            .OrderByDescending(b => b.BalanceAsOf) // Order balances by date descending
-                            .Select(b => new
-                            {
-                                b.BalanceAsOf, // Date of the balance
-                                b.Amount // Balance amount
-                            })
-                    })
-                    .FirstOrDefault();
+                    .Include(a => a.Balances)
+                    .FirstOrDefault(a => a.AssetId == assetId);
 
-                // If the asset is not found, return a 404 Not Found response
+                // Return 404 if the asset is not found
                 if (asset == null)
                 {
                     return NotFound($"Asset with ID {assetId} not found.");
                 }
 
-                // Return the asset and its balances as a 200 OK response
-                return Ok(asset);
+                // Prepare the result with historical balances
+                var result = new
+                {
+                    asset.AssetId,
+                    asset.Nickname,
+                    asset.WealthAssetType,
+                    Balances = asset.Balances
+                        .OrderByDescending(b => b.BalanceAsOf)
+                        .Select(b => new
+                        {
+                            b.BalanceAsOf,
+                            Amount = b.Amount,
+                            BalanceCostBasis = b.BalanceCostBasis.HasValue ? b.BalanceCostBasis.Value : (decimal?)null
+                        })
+                };
+
+                // Return the result as a JSON response
+                return Ok(result);
+            }
+            catch (System.Data.SqlTypes.SqlNullValueException ex)
+            {
+                // Handle null value exceptions
+                return BadRequest($"Null value encountered: {ex.Message}");
             }
             catch (Exception ex)
             {
-                // Throw a new exception with additional context if an error occurs
-                throw new Exception("GetHistoricalBalances - Error getting the historial balances from database", ex);
+                // Handle general exceptions
+                return StatusCode(500, $"Error retrieving historical balances: {ex.Message}");
             }
         }
     }
